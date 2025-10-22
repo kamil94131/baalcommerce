@@ -47,7 +47,7 @@ Oferta (Offer)
   "createdAt": "timestamp yyyy-MM-dd HH:mm:ss (server)",
   "sellerId": "Supabase Auth UID, unique, wskazuje autora oferty)",
   "sellerName": "string, length 5-50, pochodzi z Profil.name",
-  "sellerCamp": "string, length 5-15, pochodzi z Profil,camp",
+  "sellerCamp": "string, length 5-15, pochodzi z Profil.camp",
   "status": "enum(CREATED, DONE)"
 }
 ```
@@ -185,12 +185,14 @@ Tytuł: Tworzenie oferty (sprzedający)
 Opis: Jako sprzedający chcę utworzyć ofertę z tytułem, opisem, ceną i ilością, aby wystawić zioła na sprzedaż.
 Kryteria akceptacji:
 
-1. `title` 5–20 znaków; `description` 0–200 znaków; `price` int 0–999; `quantity` int 1–99.
-2. `sellerCamp` (w zapisie: `sellerCamp` jako pole tekstowe) zapisuje obóz sprzedającego automatycznie (wartość tekstowa 5–15).
-3. `createdAt` jest generowane serwerowo w formacie `yyyy-MM-dd HH:mm:ss`.
-4. Po zapisie oferta ma `status = CREATED` i `id`.
-5. Autor oferty jest zapisywany w `sellerId` (Profil.userId). Uprawnienia do edycji/usunięcia opierają się na porównaniu `sellerId` z Profil.userId zalogowanego użytkownika.
-6. Błędy walidacji zwracane są po stronie serwera i wyświetlane w UI.
+1. Pola zostaja uzupełnione: `title` 5–20 znaków; `description` 0–200 znaków; `price` int 0–999; `quantity` int 1–99;
+2. Po zapisie:
+- oferta ma `status = CREATED` i `id`.
+- id autora oferty jest zapisywany automatycznie w `sellerId` (Profil.userId). Uprawnienia do edycji/usunięcia opierają się na porównaniu `sellerId` z Profil.userId zalogowanego użytkownika.
+- obóz autora oferty jest zapisany automatycznie w `sellerCamp`
+- nazwa autora oferty jest zapisana automatycznie w `sellerName`
+- `createdAt` jest generowane serwerowo w formacie `yyyy-MM-dd HH:mm:ss`
+3. Błędy walidacji zwracane są po stronie serwera i wyświetlane w UI.
 
 ### US-005
 
@@ -200,7 +202,7 @@ Kryteria akceptacji:
 
 1. Edycja możliwa tylko jeśli `offer.status == CREATED` oraz `sellerId` oferty == Profil.userId zalogowanego użytkownika.
 2. Edytować można `title`, `description`, `price`, `quantity`; wykonane walidacje jak przy tworzeniu.
-3. Próba edycji oferty ze statusem `DONE` lub oferty niebędącej mojego autorstwa zwraca błąd (HTTP 400/403) i odpowiedni komunikat.
+3. Próba edycji oferty ze statusem `DONE` lub oferty niebędącej mojego autorstwa zwraca błąd (HTTP 403) i odpowiedni komunikat.
 
 ### US-006
 
@@ -228,8 +230,8 @@ Tytuł: Rozpoczęcie zamówienia (kupujący)
 Opis: Jako kupujący chcę otworzyć formularz zamówienia dla konkretnej oferty.
 Kryteria akceptacji:
 
-1. Formularz pokazuje pola oferty (`title`, `price`, `quantity`) w trybie tylko do odczytu.
-2. Pole wyboru kuriera (dropdown z imionami), w którym można wybrać kuriera.
+1. Formularz pokazuje pola oferty (`title`, `description`, `price`, `quantity`) w trybie tylko do odczytu.
+2. Pole wyboru kuriera (dropdown z imionami), w którym można wybrać kuriera. Jeżeli użytkownik wybrał w swoim profilu domyślnego kuriera, to jest on automatycznie ustawiony w tym polu jako domyślny.
 3. Pole płatności jest tylko do odczytu i zawiera tekst "gotówka przy odbiorze (magiczna ruda)".
 
 ### US-009
@@ -240,10 +242,11 @@ Kryteria akceptacji:
 
 1. Jeśli w systemie istnieje co najmniej jeden kurier → dropdown aktywny, kup możliwy.
 2. Po kliknięciu Kup serwer tworzy zamówienie z:
-   a. zapisanymi atrybutami oferty (`title`, `quantity`, `price`, `sellerName`, `sellerCamp`) oraz kupującego (`buyerName`, `buyerCamp`) jako pola w zamówieniu,
-   b. `buyerId` (Profil.userId), `courierId`,
-   c. `sellerId` (Profil.userId sprzedawcy, zapisane w zamówieniu),
-   d. `deliveredAt` = czas serwera w formacie `yyyy-MM-dd HH:mm:ss`.
+   a. zapisanymi atrybutami oferty (`title`, `quantity`, `price`, `sellerId`, `sellerName`, `sellerCamp`) oraz kupującego (`buyerName`, `buyerCamp`, `buyerId`,) jako pola w zamówieniu,
+   b. `buyerId` (userId kupującego), 
+   c. `courierId`, wybrany kurier
+   d. `sellerId` (userId sprzedawcy),
+   e. `deliveredAt` = czas serwera w formacie `yyyy-MM-dd HH:mm:ss`.
 3. Po sukcesie `offer.status` zmienia się na `DONE`; oferta znika z listy ofert `CREATED`.
 4. Zamówienie pojawia się w widoku Kupione (dla kupującego) i Sprzedane (dla sprzedającego).
 5. Transakcja atomowa: albo zamówienie tworzone i status oferty ustawiony, albo żadna zmiana nie jest zapisywana.
@@ -264,7 +267,7 @@ Tytuł: Zarządzanie kurierami (gomez)
 Opis: Jako użytkownik z rolą gomez chcę tworzyć i usuwać kurierów, aby umożliwić zakupy.
 Kryteria akceptacji:
 
-1. Widok Kurier dostępny tylko dla konta z rolą gomez (autoryzacja po serwerze).
+1. Widok Kurier dostępny tylko dla konta z rolą gomez.
 2. Tworzenie kuriera wymaga `name` 5–20 oraz `camp` (string 5–15); po sukcesie kurier ma `id`.
 3. Usuwanie kuriera możliwe tylko z poziomu widoku gomez; usunięcie kuriera powoduje, że ten kurier nie będzie więcej dostępny w dropdown.
 4. Jeśli po usunięciu kurierów liczba = 0 → zakupy zablokowane zgodnie z US-010.
@@ -275,8 +278,9 @@ Tytuł: Widok Kupione (kupujący)
 Opis: Jako kupujący chcę zobaczyć historię moich zamówień.
 Kryteria akceptacji:
 
-1. Widok pokazuje listę zamówień z: `title`, `quantity`, `sellerName`, `sellerCamp`, `deliveredAt`.
+1. Widok pokazuje listę zamówień z: `title`, `quantity`,`sellerId`, `sellerName`, `sellerCamp`, `deliveredAt`.
 2. Dane pochodzą z tabeli zamówień i są nieusuwalne przez zwykłego użytkownika.
+3. Zamowienia sa powiazane z kupujacym poprzez `buyerId` = `(Profil.userId)` 
 
 ### US-013
 
@@ -284,8 +288,9 @@ Tytuł: Widok Sprzedane (sprzedający)
 Opis: Jako sprzedający chcę zobaczyć historię sprzedaży moich ofert.
 Kryteria akceptacji:
 
-1. Widok pokazuje zamówienia, gdzie `sellerId = Profil.userId`, pola: `title`, `quantity`, `deliveredAt`.
+1. Widok pokazuje listę zamówień z: `title`, `quantity`,`buyerId`, `buyerName`, `buyerCamp`, `deliveredAt`.
 2. Rekordy nieusuwalne przez sprzedającego.
+3. Zamowienia sa powiazane z sprzedajacym poprzez `sellerId` = `(Profil.userId)`
 
 ### US-014
 
@@ -298,7 +303,7 @@ Kryteria akceptacji:
 
 ### US-015
 
-Tytuł: Zapobieganie kupna własnej oferty (edge case)
+Tytuł: Zapobieganie kupna własnej oferty
 Opis: Jako system chcę blokować sytuację, w której użytkownik kupuje własną ofertę.
 Kryteria akceptacji:
 

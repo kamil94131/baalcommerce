@@ -1,15 +1,12 @@
-import type { APIContext } from "astro";
-import { z } from "zod";
-import { supabaseClient } from "../../../db/supabase.client";
+import type {APIContext} from "astro";
+import {DEFAULT_USER_ID} from "@/db/supabase.client.ts";
+import {CourierService} from "@/lib/services/courier.service.ts";
+import {IdSchema} from "../common.schema";
 
 export const prerender = false;
 
-const IdSchema = z.coerce.number().int().positive();
-
 export async function DELETE(context: APIContext): Promise<Response> {
-  const supabase = supabaseClient;
-
-  // Validate ID
+  // 1. Validate ID
   const id = context.params.id;
   const idValidationResult = IdSchema.safeParse(id);
   if (!idValidationResult.success) {
@@ -17,47 +14,24 @@ export async function DELETE(context: APIContext): Promise<Response> {
   }
   const validatedId = idValidationResult.data;
 
+  // 2. Call service
   try {
-    // Authorize user: must have 'gomez' role
-    const { data: hasRole, error: rpcError } = await supabase.rpc("has_role", {
-      role_name: "gomez",
-    });
-
-    if (rpcError || !hasRole) {
-      return new Response(
-        JSON.stringify({ error: "Forbidden: User does not have the required 'gomez' role." }),
-        { status: 403, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    // Delete courier
-    const { error: deleteError, count } = await supabase
-      .from("Couriers")
-      .delete({ count: 'exact' })
-      .eq("id", validatedId);
-
-    if (deleteError) {
-      // Handle foreign key violation
-      if (deleteError.code === '23503') { // foreign_key_violation
-        return new Response(
-          JSON.stringify({ error: `Conflict: Courier with ID ${validatedId} is associated with existing orders and cannot be deleted.` }),
-          { status: 409, headers: { "Content-Type": "application/json" } }
-        );
-      }
-      console.error(`Supabase error during DELETE /couriers/${validatedId}:`, deleteError.message);
-      return new Response(JSON.stringify({ error: "Internal Server Error" }), { status: 500, headers: { "Content-Type": "application/json" } });
-    }
-
-    // Check if a row was actually deleted
-    if (count === 0) {
-        return new Response(JSON.stringify({ error: `Courier with ID ${validatedId} not found.` }), { status: 404, headers: { "Content-Type": "application/json" } });
-    }
-
+    await CourierService.deleteCourier(DEFAULT_USER_ID, validatedId);
     return new Response(null, { status: 204 });
-
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred.";
-    console.error(`Unexpected error in DELETE /couriers/${validatedId}:`, errorMessage);
+    if (error instanceof Error) {
+      switch (error.message) {
+        case 'Forbidden':
+          return new Response(JSON.stringify({ error: "Forbidden: User does not have the required 'gomez' role." }), { status: 403, headers: { "Content-Type": "application/json" } });
+        case 'NotFound':
+          return new Response(JSON.stringify({ error: `Courier with ID ${validatedId} not found.` }), { status: 404, headers: { "Content-Type": "application/json" } });
+        case 'Conflict':
+          return new Response(JSON.stringify({ error: `Conflict: Courier with ID ${validatedId} is associated with existing orders and cannot be deleted.` }), { status: 409, headers: { "Content-Type": "application/json" } });
+        default:
+          break;
+      }
+    }
+    console.error(`Unexpected error in DELETE /couriers/${validatedId}:`, error);
     return new Response(JSON.stringify({ error: "Internal Server Error" }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
 }

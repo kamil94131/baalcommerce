@@ -1,8 +1,3 @@
----
-description: 
-globs: 
-alwaysApply: false
----
 # Shadcn UI Components
 
 Ten projekt wykorzystuje @shadcn/ui dla komponentów interfejsu użytkownika. Są to pięknie zaprojektowane, dostępne komponenty, które można dostosować do swojej aplikacji.
@@ -85,6 +80,7 @@ Niektóre popularne komponenty to:
 - Select
 - Separator
 - Sheet
+- Sidebar
 - Skeleton
 - Slider
 - Switch

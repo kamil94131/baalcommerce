@@ -1,37 +1,23 @@
-import type { APIContext } from "astro";
-import { supabaseClient } from "../../../db/supabase.client";
-import { z } from "zod";
-import type { CreateCourierCommand } from "../../../types";
+import type {APIContext} from "astro";
+import {DEFAULT_USER_ID} from "@/db/supabase.client.ts";
+import type {CreateCourierCommand} from "@/types.ts";
+import {CourierService} from "@/lib/services/courier.service.ts";
+import {CreateCourierSchema} from "./courier.schema";
 
 export const prerender = false;
 
 export async function GET(context: APIContext): Promise<Response> {
-  const supabase = supabaseClient;
-
   try {
-    const { data: couriers, error } = await supabase.from("Couriers").select("*");
-
-    if (error) {
-      console.error("Supabase error in GET /couriers:", error.message);
-      return new Response(JSON.stringify({ error: "Internal Server Error" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
+    const couriers = await CourierService.getCouriers();
     const responsePayload = {
-      data: couriers || [],
+      data: couriers,
     };
-
     return new Response(JSON.stringify(responsePayload), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-
   } catch (error: unknown) {
-    const errorMessage =
-      error instanceof Error ? error.message : "An unexpected error occurred.";
-    console.error("Unexpected error in GET /couriers:", errorMessage);
+    console.error("Unexpected error in GET /couriers:", error);
     return new Response(JSON.stringify({ error: "Internal Server Error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
@@ -39,15 +25,10 @@ export async function GET(context: APIContext): Promise<Response> {
   }
 }
 
-const CreateCourierSchema = z.object({
-  name: z.string().min(5, "Name must be at least 5 characters long."),
-  camp: z.enum(["OLD_CAMP", "NEW_CAMP", "SWAMP_CAMP"]),
-});
+
 
 export async function POST(context: APIContext): Promise<Response> {
-  const supabase = supabaseClient;
-
-  // Validate body
+  // 1. Validate body
   let requestData: CreateCourierCommand;
   try {
     requestData = await context.request.json();
@@ -66,44 +47,28 @@ export async function POST(context: APIContext): Promise<Response> {
     );
   }
 
+  // 2. Call service
   try {
-    // Authorize user: must have 'gomez' role
-    // RLS policy is the true enforcer, but this provides a clearer error response.
-    const { data: hasRole, error: rpcError } = await supabase.rpc("has_role", {
-      role_name: "gomez",
-    });
-
-    if (rpcError || !hasRole) {
-      return new Response(
-        JSON.stringify({ error: "Forbidden: User does not have the required 'gomez' role." }),
-        { status: 403, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    // Insert new courier
-    const { data: newCourier, error: insertError } = await supabase
-      .from("Couriers")
-      .insert(validationResult.data)
-      .select()
-      .single();
-
-    if (insertError) {
-      // Handle unique name conflict
-      if (insertError.code === '23505') { // unique_violation
-        return new Response(
-          JSON.stringify({ error: `Conflict: A courier with the name '${validationResult.data.name}' already exists.` }),
-          { status: 409, headers: { "Content-Type": "application/json" } }
-        );
-      }
-      console.error("Supabase error in POST /couriers:", insertError.message);
-      return new Response(JSON.stringify({ error: "Internal Server Error" }), { status: 500, headers: { "Content-Type": "application/json" } });
-    }
-
+    const newCourier = await CourierService.createCourier(
+      DEFAULT_USER_ID,
+      validationResult.data
+    );
     return new Response(JSON.stringify(newCourier), { status: 201, headers: { "Content-Type": "application/json" } });
-
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred.";
-    console.error("Unexpected error in POST /couriers:", errorMessage);
+    if (error instanceof Error) {
+      switch (error.message) {
+        case 'Forbidden':
+          return new Response(JSON.stringify({ error: "Forbidden: User does not have the required 'gomez' role." }), { status: 403, headers: { "Content-Type": "application/json" } });
+        case 'Conflict':
+           return new Response(
+            JSON.stringify({ error: `Conflict: A courier with the name '${validationResult.data.name}' already exists.` }),
+            { status: 409, headers: { "Content-Type": "application/json" } }
+          );
+        default:
+          break; // Fallthrough for other errors
+      }
+    }
+    console.error("Unexpected error in POST /couriers:", error);
     return new Response(JSON.stringify({ error: "Internal Server Error" }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
 }
